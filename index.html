@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Al Shamia to Safia Publication Space</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #000; 
+        }
+        #ui-layer { 
+            position: absolute; 
+            top: 20px; 
+            left: 20px; 
+            color: white; 
+            font-family: sans-serif; 
+            pointer-events: none; 
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 8px;
+        }
+    </style>
+    <!-- Load Three.js and GLTFLoader -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+    <div id="ui-layer">
+        <h2>Al Shamia to Safia</h2>
+        <p id="instruction">Click the door to enter the publication.</p>
+    </div>
+
+    <!-- Audio for interactive book dropping -->
+    <audio id="bookSound" src="book_drop.mp3" preload="auto"></audio>
+
+    <!-- Game Logic -->
+    <script src="game.js"></script>
+</body>
+</html>
+
