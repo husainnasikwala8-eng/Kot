@@ -1,1 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Aljamea Library — Scene Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --gold:#c9a24b;
+    --maroon:#5c1f1f;
+    --cream:#f3ead8;
+    --bg:#0b0805;
+    --ink:#f3ead8;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    height:100%; margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Inter',sans-serif; overflow:hidden; overscroll-behavior:none;
+    -webkit-user-select:none; user-select:none;
+  }
+  canvas{display:block; touch-action:none;}
+
+  #loading{
+    position:fixed; inset:0; z-index:50; background:var(--bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+    padding-top:calc(env(safe-area-inset-top,0px) + 20px);
+  }
+  #loading .spin{
+    width:34px; height:34px; border-radius:50%;
+    border:3px solid rgba(201,162,75,0.25); border-top-color:var(--gold);
+    animation:spin 0.9s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  #loading p{ font-family:'Cormorant Garamond',serif; font-size:19px; color:var(--gold); letter-spacing:0.02em; margin:0; }
+
+  #intro-ui{
+    position:fixed; inset:0; z-index:40; display:flex; flex-direction:column;
+    align-items:center; justify-content:flex-end; padding:0 24px calc(env(safe-area-inset-bottom,0px) + 56px);
+    pointer-events:none; transition:opacity 0.5s ease;
+  }
+  #intro-ui.hidden{ opacity:0; pointer-events:none; }
+  #intro-ui .titleWrap{
+    position:absolute; top:calc(env(safe-area-inset-top,0px) + 14%); left:0; right:0;
+    text-align:center; padding:0 20px;
+  }
+  #intro-ui h1{
+    font-family:'Cormorant Garamond',serif; font-weight:600; font-size:30px;
+    color:var(--cream); margin:0 0 6px; letter-spacing:0.03em;
+  }
+  #intro-ui p.sub{
+    font-size:13px; color:rgba(243,234,216,0.6); margin:0; letter-spacing:0.03em;
+  }
+  #enterBtn{
+    pointer-events:auto;
+    font-family:'Cormorant Garamond',serif; font-weight:600; font-size:20px; letter-spacing:0.08em;
+    color:var(--bg); background:linear-gradient(180deg,#e0bd74,var(--gold));
+    border:none; border-radius:999px; padding:14px 46px; text-transform:uppercase;
+    box-shadow:0 8px 24px rgba(201,162,75,0.35);
+  }
+  #enterBtn:disabled{ opacity:0.4; }
+  #enterBtn:active{ transform:scale(0.97); }
+
+  #banner{
+    position:fixed; top:calc(env(safe-area-inset-top,0px) + 18px); left:50%;
+    transform:translate(-50%,-14px); z-index:30; pointer-events:none;
+    font-family:'Cormorant Garamond',serif; font-size:17px; color:var(--cream);
+    background:rgba(20,14,8,0.72); border:1px solid rgba(201,162,75,0.35);
+    padding:9px 20px; border-radius:10px; opacity:0; transition:all 0.35s ease;
+    white-space:nowrap;
+  }
+  #banner.show{ opacity:1; transform:translate(-50%,0); }
+
+  #prompt-text{
+    position:fixed; left:50%; bottom:calc(env(safe-area-inset-bottom,0px) + 122px);
+    transform:translateX(-50%); z-index:25; pointer-events:none;
+    font-size:13px; color:var(--cream); background:rgba(20,14,8,0.7);
+    padding:7px 14px; border-radius:8px; opacity:0; transition:opacity 0.2s ease;
+  }
+  #prompt-text.show{ opacity:1; }
+
+  #crosshair{
+    position:fixed; top:50%; left:50%; width:5px; height:5px; margin:-2.5px 0 0 -2.5px;
+    border-radius:50%; background:rgba(243,234,216,0.75); z-index:20;
+    opacity:0; pointer-events:none; transition:opacity 0.3s ease;
+  }
+  #crosshair.show{ opacity:1; }
+
+  #touchUI{ opacity:0; pointer-events:none; transition:opacity 0.4s ease; }
+  #touchUI.show{ opacity:1; pointer-events:auto; }
+
+  #lookZone{
+    position:fixed; top:0; right:0; bottom:0; left:0; z-index:10;
+  }
+  #joyBase{
+    position:fixed; z-index:22; left:calc(env(safe-area-inset-left,0px) + 26px);
+    bottom:calc(env(safe-area-inset-bottom,0px) + 30px);
+    width:100px; height:100px; border-radius:50%;
+    background:rgba(243,234,216,0.08); border:1px solid rgba(243,234,216,0.25);
+  }
+  #joyKnob{
+    position:absolute; top:50%; left:50%; width:42px; height:42px; margin:-21px 0 0 -21px;
+    border-radius:50%; background:rgba(201,162,75,0.55); border:1px solid rgba(243,234,216,0.4);
+  }
+  #interactBtn{
+    position:fixed; z-index:22; right:calc(env(safe-area-inset-right,0px) + 26px);
+    bottom:calc(env(safe-area-inset-bottom,0px) + 42px);
+    width:74px; height:74px; border-radius:50%;
+    background:rgba(92,31,31,0.55); border:1px solid rgba(201,162,75,0.5);
+    color:var(--cream); font-family:'Cormorant Garamond',serif; font-size:13px;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+  }
+  #interactBtn:active{ background:rgba(92,31,31,0.85); }
+</style>
+</head>
+<body>
+
+  <div id="loading">
+    <div class="spin"></div>
+    <p>Preparing the hall…</p>
+  </div>
+
+  <div id="intro-ui">
+    <div class="titleWrap">
+      <h1>Aljamea-tus-Saifiyah</h1>
+      <p class="sub">a first look — publications hall</p>
+    </div>
+    <button id="enterBtn" disabled>Enter</button>
+  </div>
+
+  <div id="banner"></div>
+  <div id="prompt-text"></div>
+  <div id="crosshair"></div>
+
+  <canvas id="c"></canvas>
+
+  <div id="touchUI">
+    <div id="lookZone"></div>
+    <div id="joyBase"><div id="joyKnob"></div></div>
+    <div id="interactBtn">interact</div>
+  </div>
+
+  <audio id="bookDropSound" src="book_drop.mp3" preload="auto"></audio>
+
+<script>
+  // Always-on safety net: if anything below fails to load or throws,
+  // show the actual error on the loading screen instead of hanging forever.
+  window.addEventListener('error', function (e) {
+    var p = document.querySelector('#loading p');
+    if (p) p.textContent = 'Error: ' + (e.message || (e.error && e.error.message) || 'failed to load');
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    var p = document.querySelector('#loading p');
+    if (p) p.textContent = 'Error: ' + (e.reason && e.reason.message ? e.reason.message : 'failed to load');
+  });
+</script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="game.js"></script>
+</body>
+</html>
 
