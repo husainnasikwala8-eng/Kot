@@ -4,7 +4,7 @@
    an NPC enters -> show her a book.
    Written as one script so it's easy to read top-to-bottom and to drop
    straight into your GitHub Pages repo.
-=========================================================================== */
+   =========================================================================== */
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -491,11 +491,11 @@ function updateTargeting() {
       const dist = camera.position.distanceTo(worldPos);
       if (dist < 1.9) {
         const toBook = worldPos.clone().sub(camera.position).normalize();
-        const facing = camera.getWorldDirection(new THREE.Vector3())
-     if (dist < 1.9) {
-        const toBook = worldPos.clone().sub(camera.position).normalize();
         const facing = camera.getWorldDirection(new THREE.Vector3());
-        if (toBook.dot(facing) > 0.75) { currentTarget = { type: 'book', book: b }; break; }
+        if (toBook.dot(facing) > 0.75) {
+          currentTarget = { type: 'book', book: b };
+          break;
+        }
       }
     }
   }
@@ -601,4 +601,4 @@ function animate() {
 
   renderer.render(scene, camera);
 }
-animate();    
+animate();
