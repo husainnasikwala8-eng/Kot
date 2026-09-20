@@ -14,8 +14,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 
 // Assets live as separate files next to this one in the repo:
-//   model.glb, door.jpg, shelf.jpg, book_drop.mp3
-// (see the upload list in the reply for where each one comes from)
+//   model.glb, door.jpg, shelf.jpg, book_drop.mp3, npc.png
 
 // ---------- renderer / scene / camera ----------
 const canvas = document.getElementById('c');
@@ -99,12 +98,48 @@ for (let i = 0; i < 3; i++) {
   });
 }
 
-// exterior facade (outside the door), textured with the real storefront photo
-const facadeMat = new THREE.MeshStandardMaterial({ map: doorTex, roughness: 0.9, side: THREE.DoubleSide });
-const facade = new THREE.Mesh(new THREE.PlaneGeometry(ROOM.x * 2 + 2, 3.6), facadeMat);
-facade.position.set(0, 1.8, ROOM.zDoor + 0.02);
-facade.rotation.y = Math.PI; // faces outward, toward the intro camera
-scene.add(facade);
+// exterior facade (outside the door), textured with the real storefront photo —
+// built as three panels (left / right / header) so there's an actual doorway
+// hole instead of one solid photo plane blocking the entrance.
+const FACADE_W = ROOM.x * 2 + 2;   // 9.6, matches the old single-plane width
+const FACADE_H = 3.6;
+const DOOR_HALF_W = 0.55;
+const DOOR_H = 2.3;
+
+function facadePanel(width, height, worldX, worldY, uMin, uMax, vMin, vMax) {
+  const tex = doorTex.clone();
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.offset.set(uMin, vMin);
+  tex.repeat.set(uMax - uMin, vMax - vMin);
+  tex.needsUpdate = true;
+  const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), mat);
+  mesh.position.set(worldX, worldY, ROOM.zDoor + 0.02);
+  mesh.rotation.y = Math.PI; // faces outward, toward the intro camera
+  scene.add(mesh);
+  return mesh;
+}
+
+const leftPanelW = FACADE_W / 2 - DOOR_HALF_W;
+const rightPanelW = leftPanelW;
+facadePanel(
+  leftPanelW, FACADE_H,
+  -FACADE_W / 2 + leftPanelW / 2, FACADE_H / 2,
+  0, leftPanelW / FACADE_W,
+  0, 1
+);
+facadePanel(
+  rightPanelW, FACADE_H,
+  FACADE_W / 2 - rightPanelW / 2, FACADE_H / 2,
+  1 - rightPanelW / FACADE_W, 1,
+  0, 1
+);
+facadePanel(
+  DOOR_HALF_W * 2, FACADE_H - DOOR_H,
+  0, (DOOR_H + FACADE_H) / 2,
+  0.5 - DOOR_HALF_W / FACADE_W, 0.5 + DOOR_HALF_W / FACADE_W,
+  DOOR_H / FACADE_H, 1
+);
 
 // the door itself — a separate hinged group so it can swing open
 const doorGroup = new THREE.Group();
@@ -175,6 +210,15 @@ function resolveCollision(pos, radius) {
       else pos.z += Math.sign(dz || 1) * oz;
     }
   });
+
+  // The front wall only has a gap at the doorway — block crossing it anywhere else,
+  // so you can't clip straight through the facade like before.
+  const wallZ = ROOM.zDoor;
+  const gap = DOOR_HALF_W - radius * 0.5;
+  if (Math.abs(pos.x) > Math.max(gap, 0.05) && Math.abs(pos.z - wallZ) < radius) {
+    pos.z = (pos.z < wallZ) ? wallZ - radius : wallZ + radius;
+  }
+
   pos.x = clamp(pos.x, -ROOM.x + 0.35, ROOM.x - 0.35);
   pos.z = clamp(pos.z, ROOM.zBack + 0.35, ROOM.outerZ - 0.35);
 }
@@ -204,6 +248,38 @@ scene.add(viewerGhost);
 let mainFigure = null;
 let headAnchor = null; // world-space eye height comes from this bone if we find it
 
+// The avatar ships with no animation clips, so it renders in its raw bind
+// pose — which for this rig is a T-pose. This fixes it by measuring where
+// each upper arm currently points (in world space) and rotating it to a
+// relaxed "hanging at the side" direction instead. It works from real
+// bone positions rather than guessing the rig's local axis conventions,
+// which is the part that's normally impossible to get right blind.
+function relaxArm(root, boneName, childName, targetDir) {
+  const bone = root.getObjectByName(boneName);
+  const child = root.getObjectByName(childName);
+  if (!bone || !child) { console.warn('relaxArm: bone not found', boneName, childName); return; }
+
+  root.updateMatrixWorld(true);
+  const boneWorldPos = new THREE.Vector3();
+  const childWorldPos = new THREE.Vector3();
+  bone.getWorldPosition(boneWorldPos);
+  child.getWorldPosition(childWorldPos);
+  const currentDir = childWorldPos.clone().sub(boneWorldPos).normalize();
+  const target = targetDir.clone().normalize();
+
+  const deltaQuat = new THREE.Quaternion().setFromUnitVectors(currentDir, target);
+  const currentWorldQuat = new THREE.Quaternion();
+  bone.getWorldQuaternion(currentWorldQuat);
+  const newWorldQuat = deltaQuat.multiply(currentWorldQuat);
+
+  const parentWorldQuat = new THREE.Quaternion();
+  bone.parent.getWorldQuaternion(parentWorldQuat);
+  const newLocalQuat = parentWorldQuat.invert().multiply(newWorldQuat);
+
+  bone.quaternion.copy(newLocalQuat);
+  root.updateMatrixWorld(true);
+}
+
 const loader = new GLTFLoader();
 let modelReady = false;
 loader.load(
@@ -216,6 +292,11 @@ loader.load(
     mainFigure.traverse((o) => {
       if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; }
     });
+    // Bring the arms down from the T-pose bind pose to a relaxed standing pose.
+    // Target directions are in world space: mostly straight down, angled very
+    // slightly outward. If the rig turns out mirrored, swap the two X signs below.
+    relaxArm(mainFigure, 'LeftArm', 'LeftForeArm', new THREE.Vector3(-0.28, -1, 0.05));
+    relaxArm(mainFigure, 'RightArm', 'RightForeArm', new THREE.Vector3(0.28, -1, 0.05));
     headAnchor = mainFigure.getObjectByName('Head') || null;
     scene.add(mainFigure);
     modelReady = true;
@@ -259,33 +340,20 @@ function nameSprite(text) {
   spr.scale.set(1.1, 0.28, 1);
   return spr;
 }
+const npcTex = loadTex('npc.png');
 function makeNpc() {
   const name = NPC_NAMES[Math.floor(Math.random() * NPC_NAMES.length)];
   const g = new THREE.Group();
-  const robeMat = new THREE.MeshStandardMaterial({ color: 0xead9c8, roughness: 0.75 });
-  const robe = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.35, 18), robeMat);
-  robe.position.y = 0.78;
-  g.add(robe);
-  // face: a soft blurred disc rather than any real photo/likeness
-  const faceCnv = document.createElement('canvas');
-  faceCnv.width = 128; faceCnv.height = 128;
-  const fctx = faceCnv.getContext('2d');
-  const grad = fctx.createRadialGradient(64, 64, 4, 64, 64, 62);
-  grad.addColorStop(0, '#e8c9a8');
-  grad.addColorStop(1, '#c9a988');
-  fctx.fillStyle = grad;
-  fctx.fillRect(0, 0, 128, 128);
-  fctx.filter = 'blur(9px)';
-  fctx.drawImage(faceCnv, 0, 0);
-  const faceTex = new THREE.CanvasTexture(faceCnv);
-  const head = new THREE.Mesh(
-    new THREE.SphereGeometry(0.15, 20, 20),
-    new THREE.MeshStandardMaterial({ map: faceTex, roughness: 0.9 })
-  );
-  head.position.y = 1.53;
-  g.add(head);
+  // She's a photo cutout (face already blurred in npc.png) rather than a
+  // geometric placeholder — a camera-facing sprite, sized to about human height.
+  const aspect = 420 / 641; // width / height of npc.png — update if you swap the image
+  const bodyHeight = 1.72;
+  const body = new THREE.Sprite(new THREE.SpriteMaterial({ map: npcTex, transparent: true }));
+  body.scale.set(bodyHeight * aspect, bodyHeight, 1);
+  body.position.y = bodyHeight / 2;
+  g.add(body);
   const tag = nameSprite(name);
-  tag.position.y = 1.95;
+  tag.position.y = bodyHeight + 0.22;
   g.add(tag);
   g.userData = { type: 'npc', name };
   g.position.set(2.6, 0, -4.2);
@@ -423,6 +491,9 @@ function updateTargeting() {
       const dist = camera.position.distanceTo(worldPos);
       if (dist < 1.9) {
         const toBook = worldPos.clone().sub(camera.position).normalize();
+        const facing = camera.getWorldDirection(new THREE.Vector3())
+     if (dist < 1.9) {
+        const toBook = worldPos.clone().sub(camera.position).normalize();
         const facing = camera.getWorldDirection(new THREE.Vector3());
         if (toBook.dot(facing) > 0.75) { currentTarget = { type: 'book', book: b }; break; }
       }
@@ -523,12 +594,11 @@ function animate() {
       heldBook.mesh.rotation.copy(camera.rotation);
     }
     if (npc) {
-      npc.position.lerp(npcWalkTarget, 0.01);
-      npc.lookAt(camera.position.x, npc.position.y, camera.position.z);
+      npc.position.lerp(npcWalkTarget, 0.01); // she's a sprite, so she always faces the camera automatically
     }
     updateTargeting();
   }
 
   renderer.render(scene, camera);
 }
-animate();
+animate();    
